@@ -165,6 +165,11 @@ test("names from the hosts file can be sites", () => {
   assert.equal(resolveInput("example.com", { hostNames: new Set(["example.com"]) }), "https://example.com/");
 });
 
+test("searches go to Google, and the home page is Google", () => {
+  assert.equal(resolveInput("what is a closure"), "https://www.google.com/search?q=what%20is%20a%20closure");
+  assert.equal(resolveInput(""), "https://www.google.com/");
+});
+
 test("the search engine and home page can be changed", () => {
   const options = { searchUrl: "https://www.example-search.test/?q=", home: "about:blank" };
   assert.equal(resolveInput("hello world", options), "https://www.example-search.test/?q=hello%20world");

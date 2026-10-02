@@ -63,7 +63,7 @@ Signing is on the [roadmap](tasks.md). Until then you can compare the file you d
 
 | Area | What you get |
 | --- | --- |
-| **Browsing** | Tabs, back, forward, reload, Chromium DevTools. The address bar knows `localhost:3000`, IP addresses, `[::1]`, `*.local` and `*.test` are dev servers (opened over http), real domains open over https, and anything else (`package.json`, a question) is a search (DuckDuckGo) |
+| **Browsing** | Tabs, back, forward, reload, Chromium DevTools. The address bar knows `localhost:3000`, IP addresses, `[::1]`, `*.local` and `*.test` are dev servers (opened over http), real domains open over https, and anything else (`package.json`, a question) is a Google search |
 | **Find and shortcuts** | Find in page with match count, a right-click menu (open link in new tab, copy link, search for selection, Inspect), and the usual browser shortcuts, see below |
 | **PDFs** | Chromium's built-in PDF viewer (PDFium): thumbnails, zoom, rotate, annotate, download, print |
 | **Read mode** | Text-only loading per tab, a clean reader view, word count, page size and blocked-request count |

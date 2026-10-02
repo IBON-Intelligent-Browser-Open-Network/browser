@@ -153,7 +153,7 @@ export function App() {
           }}
           onBlur={() => setEditing(false)}
           onChange={(e) => setAddress(e.target.value)}
-          placeholder="Search or enter address"
+          placeholder="Search Google or enter address"
           spellCheck={false}
         />
         <button type="button" className={`pill${readMode ? " on" : ""}`} onClick={toggleRead} title="Text-only read mode: blocks images, media and fonts">

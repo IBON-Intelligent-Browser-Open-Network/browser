@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { extractReadable, isTracker } from "./readable.mjs";
 import { summarizeDumps } from "./crash-reports.mjs";
 import { PermissionManager } from "./permission-manager.mjs";
-import { HOME, SEARCH, parseHostsFile, resolveInput } from "./address.mjs";
+import { HOME, SEARCH, SEARCH_ENGINE, parseHostsFile, resolveInput } from "./address.mjs";
 import { matchShortcut } from "./shortcuts.mjs";
 import { buildContextMenuTemplate } from "./context-menu.mjs";
 import * as ai from "./ai.mjs";
@@ -267,7 +267,7 @@ function showContextMenu(wc, params) {
     inspect: (x, y) => wc.inspectElement(x, y),
     canGoBack: wc.navigationHistory.canGoBack(),
     canGoForward: wc.navigationHistory.canGoForward(),
-    engineName: "DuckDuckGo",
+    engineName: SEARCH_ENGINE,
   });
   Menu.buildFromTemplate(template).popup({ window: win ?? undefined });
 }

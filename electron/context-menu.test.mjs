@@ -15,7 +15,7 @@ function setup(params, overrides = {}) {
     inspect: (x, y) => calls.push(["inspect", x, y]),
     canGoBack: true,
     canGoForward: false,
-    engineName: "DuckDuckGo",
+    engineName: "Google",
     ...overrides,
   };
   const template = buildContextMenuTemplate(params, actions);
@@ -63,7 +63,7 @@ test("a data: image has no address to open", () => {
 test("selected text can be copied or searched, with a long selection shortened", () => {
   const { labels, click, calls } = setup({ selectionText: "  closures in javascript explained simply and clearly  " });
   assert.ok(labels.includes("copy"));
-  const searchLabel = labels.find((l) => String(l).startsWith("Search DuckDuckGo"));
+  const searchLabel = labels.find((l) => String(l).startsWith("Search Google"));
   assert.ok(searchLabel.length < 60 && searchLabel.endsWith("…”"), searchLabel);
   click(searchLabel);
   assert.deepEqual(calls, [["search", "closures in javascript explained simply and clearly"]]);

@@ -18,8 +18,10 @@
 import { domainToASCII } from "node:url";
 import { TLDS } from "./tlds.mjs";
 
-export const HOME = "https://duckduckgo.com/";
-export const SEARCH = "https://duckduckgo.com/?q=";
+/** The default search engine. Its name is shown in the interface, for example "Search Google for …". */
+export const SEARCH_ENGINE = "Google";
+export const HOME = "https://www.google.com/";
+export const SEARCH = "https://www.google.com/search?q=";
 
 /** Names that only make sense on a private network or this machine. */
 const LOCAL_SUFFIXES = ["localhost", "local", "test", "internal", "lan", "home.arpa", "localdomain", "intranet", "corp", "home"];
