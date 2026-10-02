@@ -4,33 +4,39 @@
 
 <p align="center">
   <b>Intelligent Browser Open Network</b><br>
-  A light, open-source browser for developers: real Chromium, a small hackable interface,<br>
-  and an assistant that works with whichever LLM you choose.
+  A light, open-source browser for developers: real Chromium, uBlock Origin's filter lists built in,<br>
+  a small hackable interface, and an assistant that works with whichever LLM you choose.
 </p>
 
 <p align="center">
   <a href="https://github.com/faseen6351/Ibon/releases"><img alt="Release" src="https://img.shields.io/github/v/release/faseen6351/Ibon?include_prereleases&color=9d00ff"></a>
   <a href="https://github.com/faseen6351/Ibon/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/faseen6351/Ibon/ci.yml?branch=main&label=CI"></a>
   <a href="LICENSE"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/license-BSD--3--Clause-9d00ff"></a>
-  <img alt="Built with Electron" src="https://img.shields.io/badge/built%20with-Electron-47848f">
+  <img alt="Built with Electron 44" src="https://img.shields.io/badge/Electron-44-47848f?logo=electron&logoColor=white">
+  <img alt="Chromium 152" src="https://img.shields.io/badge/Chromium-152-4285f4">
+  <img alt="Ad blocking: uBlock Origin lists" src="https://img.shields.io/badge/ad%20blocking-uBlock%20Origin%20lists-800000?logo=ublockorigin&logoColor=white">
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-9d00ff"></a>
 </p>
 
 <p align="center">
+  <a href="#whats-new">What's new</a> ·
   <a href="#download">Download</a> ·
   <a href="#features">Features</a> ·
+  <a href="#ad-and-tracker-blocking">Ad blocking</a> ·
   <a href="#connect-an-llm-optional">LLM setup</a> ·
+  <a href="#tech-stack">Tech stack</a> ·
   <a href="#build-from-source">Build from source</a> ·
   <a href="tasks.md">Roadmap</a> ·
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/screenshot-browse.png" alt="Ibon showing a web page with the assistant panel open" width="900">
+  <img src="docs/assets/screenshot-browse.png" alt="Ibon on Google's home page, with the shield counting blocked requests and the Assistant panel open" width="900">
 </p>
 
 > **Status: version 0.0.1, a first alpha.** It runs, it is tested on Windows, and it is useful, but it is early. Read
 > [Known limitations](#known-limitations) before relying on it. Each crucial update bumps the version.
+> [What's new](#whats-new) lists what `main` has gained since 0.0.1 and will ship in the next release.
 
 ## Why Ibon
 
@@ -41,6 +47,26 @@
 - **Built for developers.** DNS, response-header, ping and whois lookups for the current site, and a one-click webhook for sending a page's text to n8n, Zapier or your own service.
 - **Private by default.** Ads and trackers are blocked with uBlock Origin's filter lists, nothing phones home, and crash reports stay on your computer.
 - **Open.** BSD-3-Clause. Fork it, change it, ship it.
+
+## What's new
+
+On `main` since 0.0.1, coming in the next release:
+
+- **Ad and tracker blocking with uBlock Origin's filter lists.** About 170,000 rules from uBO's default lists, updated
+  daily: blocked requests, hidden ad slots, scriptlets, and stand-ins that keep pages working. A shield next to the
+  address bar counts what was blocked; the new **Blocking** panel pauses it per site and takes your own rules in uBO
+  syntax. [More below](#ad-and-tracker-blocking).
+- **Google is the default search engine**, for the address bar and for "Search Google for …" in the right-click menu.
+- **An address bar that knows developer addresses.** `localhost:3000`, IP addresses, `[::1]:5173`, `*.local`, `*.test`
+  and names from your hosts file open over http; real domains open over https; `package.json` or a question is a search.
+- **Keyboard shortcuts, find in page and a right-click menu.** Ctrl+W no longer closes the whole window, Ctrl+R reloads
+  the page rather than Ibon itself, and Ctrl+T, Ctrl+L, Ctrl+F and Ctrl+Tab work. See [the shortcut list](#keyboard-shortcuts).
+- **Per-site permission prompts.** A site that asks for the camera, microphone or notifications gets an **Allow / Block**
+  bar instead of a silent refusal.
+- **Licence notices ship with the app**, and Ibon's own licence names the right copyright holder.
+
+0.0.1 brought the Windows, macOS and Linux installers, crash recovery, the PDF viewer and default-deny permissions; see
+the [release notes](https://github.com/faseen6351/Ibon/releases).
 
 ## Download
 
@@ -113,6 +139,10 @@ daily. Until the first download finishes (or if you are offline) a small built-i
 - Pages themselves are never blocked, only what they load. uBO's `$redirect` rules swap a script such as Google
   Analytics for a harmless stand-in, so pages that expect it keep working.
 
+<p align="center">
+  <img src="docs/assets/screenshot-blocking.png" alt="Ibon on MDN with the Blocking panel open: the site, the number of requests blocked on the page, a pause button, the filter list status and My filters" width="900">
+</p>
+
 uBlock Origin's code is GPL-3.0, so it is not part of Ibon (see [docs/licensing.md](docs/licensing.md)). Its lists are
 used as data, and they run on [Ghostery's filter engine](https://github.com/ghostery/adblocker) (MPL-2.0), which reads
 uBO's filter syntax. One of uBO's defaults, Peter Lowe's list, is left out because it states no licence.
@@ -142,6 +172,30 @@ Ibon is an early alpha. The things to know before you rely on it:
   blocked), and there is no element picker or request logger yet.
 - There are no bookmarks, history, downloads panel, extensions or session restore yet. See the [roadmap](tasks.md).
 
+## Tech stack
+
+| Layer | Technology | Version | What it does in Ibon |
+| --- | --- | --- | --- |
+| **Engine** | <img src="https://upload.wikimedia.org/wikipedia/commons/2/28/Chromium_Logo.svg" width="18" height="18" alt=""> [Chromium](https://www.chromium.org/) | 152 | Renders every page. Also brings PDFium (the PDF viewer) and Crashpad (crash reports kept on your computer). |
+| | <img src="https://cdn.simpleicons.org/electron" width="18" height="18" alt=""> [Electron](https://www.electronjs.org/) | 44 | The app shell: one sandboxed Chromium view per tab, the window, and messaging between the interface and the main process. |
+| | <img src="https://cdn.simpleicons.org/nodedotjs" width="18" height="18" alt=""> [Node.js](https://nodejs.org/) | 24, inside Electron | Runs the main process; a worker thread builds the ad-blocking engine without slowing pages down. |
+| **Interface** | <img src="https://cdn.simpleicons.org/react" width="18" height="18" alt=""> [React](https://react.dev/) | 19 | Tab strip, toolbar, reader view and the sidebar panels. |
+| | <img src="https://cdn.simpleicons.org/typescript" width="18" height="18" alt=""> [TypeScript](https://www.typescriptlang.org/) | 5 | The interface and its typed client for the main process. |
+| | <img src="https://cdn.simpleicons.org/vite" width="18" height="18" alt=""> [Vite](https://vite.dev/) | 7 | Bundles the interface; hot reload in `npm run dev`. |
+| | <img src="https://cdn.simpleicons.org/css" width="18" height="18" alt=""> CSS | | Plain CSS with design tokens in CSS variables; no component library. |
+| **Main process** | <img src="https://cdn.simpleicons.org/javascript" width="18" height="18" alt=""> JavaScript | ES modules | `electron/*.mjs`: tabs, request filtering, settings, LLM calls and the network tools. |
+| **Ad blocking** | <img src="https://cdn.simpleicons.org/ghostery" width="18" height="18" alt=""> [Ghostery adblocker](https://github.com/ghostery/adblocker) | 2.18 | The filter engine (MPL-2.0), which reads uBlock Origin's filter syntax. |
+| | <img src="https://cdn.simpleicons.org/ublockorigin/800000/e05353" width="18" height="18" alt=""> [uBlock Origin's lists](https://github.com/uBlockOrigin/uAssets) | updated daily | uBlock filters, EasyList, EasyPrivacy and the URLhaus malware list, downloaded when Ibon runs. |
+| **AI (optional)** | <img src="https://cdn.simpleicons.org/ollama/000000/ffffff" width="18" height="18" alt="Ollama"> <img src="https://api.iconify.design/simple-icons/openai.svg?color=%2374AA9C" width="18" height="18" alt="OpenAI"> <img src="https://cdn.simpleicons.org/claude" width="18" height="18" alt="Claude"> <img src="https://cdn.simpleicons.org/deepseek" width="18" height="18" alt="DeepSeek"> <img src="https://cdn.simpleicons.org/kimi/000000/ffffff" width="18" height="18" alt="Kimi"> Your choice of LLM | | Ollama, OpenAI, Anthropic, xAI, DeepSeek, Moonshot, Zhipu or any OpenAI-compatible API, called with plain `fetch` (no SDKs). |
+| **Build and test** | <img src="https://cdn.simpleicons.org/nodedotjs" width="18" height="18" alt=""> Node's test runner | `node --test` | Unit tests, no test framework. |
+| | <img src="https://cdn.simpleicons.org/googlechrome" width="18" height="18" alt=""> Chrome DevTools Protocol | | `npm run smoke` launches the real app and drives it end to end with real key presses. |
+| | <img src="https://cdn.simpleicons.org/electronbuilder/000000/ffffff" width="18" height="18" alt=""> [electron-builder](https://www.electron.build/) | 26 | Installers: NSIS and zip for Windows, dmg for macOS, AppImage and deb for Linux. |
+| | <img src="https://cdn.simpleicons.org/githubactions" width="18" height="18" alt=""> [GitHub Actions](https://github.com/features/actions) | | CI on Windows, macOS and Linux, and draft releases. |
+| | <img src="https://cdn.simpleicons.org/npm" width="18" height="18" alt=""> [npm](https://www.npmjs.com/) | | Packages, and `npm audit` on every change. |
+
+Runtime dependencies are kept few on purpose: the ad-blocking engine is the only one, and React is bundled into the
+interface. Every outside component and its licence is listed in [`docs/sourcing.md`](docs/sourcing.md).
+
 ## How it works
 
 ```
@@ -159,8 +213,9 @@ Ibon is an early alpha. The things to know before you rely on it:
 ```
 
 ```
-electron/   main process: tabs, filtering, IPC, LLM and network tools, crash reports
-src/        React interface: App, Reader, Sidebar, typed IPC client
+electron/   main process: tabs, ad blocking and Read mode filtering, IPC, LLM and
+            network tools, crash reports
+src/        React interface: App, Reader, Sidebar, Blocking panel, typed IPC client
 assets/     brand artwork (logo, wordmark)
 build/      the app icon used when packaging
 scripts/    dev and start launchers, icon builder, end-to-end smoke test
