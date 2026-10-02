@@ -1,19 +1,32 @@
-import { app, BrowserWindow, WebContentsView, Menu, ipcMain, session, shell, safeStorage, clipboard, crashReporter } from "electron";
+import { app, BrowserWindow, WebContentsView, Menu, ipcMain, net, protocol, session, shell, safeStorage, clipboard, crashReporter } from "electron";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 
-import { extractReadable, isTracker } from "./readable.mjs";
+import { extractReadable } from "./readable.mjs";
 import { summarizeDumps } from "./crash-reports.mjs";
 import { PermissionManager } from "./permission-manager.mjs";
 import { HOME, SEARCH, SEARCH_ENGINE, parseHostsFile, resolveInput } from "./address.mjs";
 import { matchShortcut } from "./shortcuts.mjs";
 import { buildContextMenuTemplate } from "./context-menu.mjs";
+import { ContentBlocker, buildEngine } from "./content-blocker.mjs";
 import * as ai from "./ai.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.IBON_DEV_URL;
 const BLOCKED_IN_READ_MODE = new Set(["image", "media", "font"]);
+// Ghostery's page-side script for element hiding (MPL-2.0, unmodified). It runs in an isolated world, reports the
+// page's ids and classes, and asks the main process which rules apply. See installCosmeticFiltering().
+const COSMETIC_PRELOAD = createRequire(import.meta.url).resolve("@ghostery/adblocker-electron-preload");
+// `$redirect` stand-ins (an empty script instead of an ad library) are served from this scheme, as uBlock Origin
+// serves them from its extension. Chromium refuses redirects to data: URLs, and a privileged scheme also gets past
+// the page's Content-Security-Policy. A new random host each run means pages cannot probe for Ibon.
+const RESOURCE_SCHEME = "ibon-resource";
+const RESOURCE_HOST = randomUUID().replaceAll("-", "");
+protocol.registerSchemesAsPrivileged([{ scheme: RESOURCE_SCHEME, privileges: { standard: true, secure: true, bypassCSP: true, supportFetchAPI: true, corsEnabled: true } }]);
 
 // Crash reports: Electron bundles Crashpad, Chromium's crash reporter. Reports stay on this device; nothing
 // is uploaded and there is no telemetry. Start it first so every process is covered.
@@ -31,11 +44,18 @@ let viewVisible = true;
 
 // ---------- settings (JSON in userData; API keys encrypted with the OS keychain) ----------
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
-const defaults = { provider: { id: "ollama", api: "openai", baseUrl: "http://localhost:11434/v1", model: "llama3.1" }, keys: {}, bookmarks: [], webhooks: [] };
+const defaults = {
+  provider: { id: "ollama", api: "openai", baseUrl: "http://localhost:11434/v1", model: "llama3.1" },
+  keys: {},
+  bookmarks: [],
+  webhooks: [],
+  blocking: { pausedSites: [], myFilters: "" },
+};
 
 function readSettings() {
   try {
-    return { ...defaults, ...JSON.parse(fs.readFileSync(settingsFile(), "utf8")) };
+    const saved = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+    return { ...defaults, ...saved, blocking: { ...defaults.blocking, ...saved.blocking } };
   } catch {
     return structuredClone(defaults);
   }
@@ -86,13 +106,21 @@ function tabInfo(id, t) {
     canGoForward: wc.navigationHistory.canGoForward(),
     readMode: t.readMode,
     blocked: t.blocked,
+    blockingPaused: blocker.isPaused(wc.getURL()),
     crashed: t.crashed,
     active: id === activeId,
   };
 }
+let pushTimer = null;
 function pushTabs() {
+  clearTimeout(pushTimer);
+  pushTimer = null;
   if (!win || win.isDestroyed()) return;
   win.webContents.send("tabs", [...tabs].map(([id, t]) => tabInfo(id, t)));
+}
+/** For the blocked-request counter: a busy page blocks dozens of requests a second, so batch the updates. */
+function pushTabsSoon() {
+  pushTimer ??= setTimeout(pushTabs, 250);
 }
 function layoutActive() {
   for (const [id, t] of tabs) {
@@ -103,7 +131,7 @@ function layoutActive() {
 }
 
 function createTab(url = HOME, activate = true) {
-  const view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  const view = new WebContentsView({ webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, preload: COSMETIC_PRELOAD } });
   const id = nextId++;
   const t = { view, readMode: false, blocked: 0, crashed: null };
   tabs.set(id, t);
@@ -124,6 +152,11 @@ function createTab(url = HOME, activate = true) {
   // A new page starts from scratch: whatever the last page was allowed to use is revoked.
   wc.on("did-start-navigation", (details) => {
     if (details.isMainFrame && !details.isSameDocument) permissions.forgetTab(id);
+  });
+  // The blocked counter is per page, like uBlock Origin's. (On commit, so a link that turns out to be a download
+  // does not wipe the count of the page that stays on screen.)
+  wc.on("did-navigate", () => {
+    t.blocked = 0;
   });
   for (const ev of ["did-start-loading", "did-stop-loading", "page-title-updated", "did-navigate", "did-navigate-in-page"]) wc.on(ev, pushTabs);
   wc.setWindowOpenHandler(({ url: u }) => {
@@ -293,16 +326,115 @@ async function readActivePage() {
   return extractReadable(html, wc.getURL());
 }
 
-// ---------- request filtering: trackers always, heavy media in Read Mode ----------
+// ---------- ad and tracker blocking with uBlock Origin's filter lists (see content-blocker.mjs) ----------
+/** @type {ContentBlocker} */
+let blocker = new ContentBlocker({ cacheDir: "", download: () => Promise.reject(new Error("not started")) }); // replaced at startup
+
+async function downloadText(url) {
+  // net.fetch goes through Chromium's network stack, so a system proxy applies, as it does to pages.
+  const res = await net.fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!res.ok) throw new Error(`${res.status} from ${new URL(url).host}`);
+  return res.text();
+}
+
+/** Parsing ~170,000 rules takes most of a second, so it happens in a worker thread rather than here. */
+function buildInWorker(texts, resources) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./filter-worker.mjs", import.meta.url), { workerData: { texts, resources } });
+    worker.once("message", resolve);
+    worker.once("error", reject);
+    worker.once("exit", (code) => reject(new Error(`filter worker stopped (${code})`))); // no-op once resolved
+  }).catch((err) => {
+    console.warn(`[ibon] building the filter engine in a worker failed (${err.message}); building it here instead`);
+    return buildEngine(texts, resources);
+  });
+}
+
+function blockerStatus() {
+  const { pausedSites, myFilters } = readSettings().blocking;
+  return { ...blocker.status(), pausedSites, myFiltersText: myFilters };
+}
+function pushBlocker() {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("blocker", blockerStatus());
+}
+
+async function startBlocker() {
+  const { pausedSites, myFilters } = readSettings().blocking;
+  blocker = new ContentBlocker({
+    cacheDir: path.join(app.getPath("userData"), "filters"),
+    download: downloadText,
+    build: buildInWorker,
+    onChange: pushBlocker,
+    redirectBase: `${RESOURCE_SCHEME}://${RESOURCE_HOST}/`,
+  });
+  blocker.setPausedSites(pausedSites);
+  blocker.setMyFilters(myFilters);
+  // Loads the lists cached by the last run (milliseconds), so the first page is already filtered. Downloading
+  // happens in the background. IBON_NO_FILTER_DOWNLOAD keeps tests off the network.
+  await blocker.start({ download: !process.env.IBON_NO_FILTER_DOWNLOAD });
+  if (!process.env.IBON_NO_FILTER_DOWNLOAD) setInterval(() => void blocker.updateIfStale(), 60 * 60 * 1000);
+}
+
+const tabOfWebContentsId = (id) => {
+  for (const t of tabs.values()) if (t.view.webContents.id === id) return t;
+  return undefined;
+};
+
+// ---------- request filtering: ads and trackers always, heavy media in Read Mode ----------
 function installFilters() {
-  session.defaultSession.webRequest.onBeforeRequest((details, cb) => {
-    // Never filter Chromium's own pages, such as the built-in PDF viewer (chrome-extension://) and DevTools.
-    if (details.url.startsWith("chrome-extension://") || details.url.startsWith("devtools://")) return cb({});
-    let tab;
-    for (const t of tabs.values()) if (t.view.webContents.id === details.webContentsId) tab = t;
-    const block = (tab && tab.readMode && BLOCKED_IN_READ_MODE.has(details.resourceType)) || (tab && isTracker(details.url));
-    if (block && tab) tab.blocked++;
-    cb({ cancel: Boolean(block) });
+  const ses = session.defaultSession;
+  ses.protocol.handle(RESOURCE_SCHEME, (request) => {
+    const url = new URL(request.url);
+    if (url.host !== RESOURCE_HOST) return new Response(null, { status: 404 });
+    const { contentType, body } = blocker.redirectResource(decodeURIComponent(url.pathname.slice(1)));
+    return new Response(body, { headers: { "content-type": contentType, "access-control-allow-origin": "*" } });
+  });
+  ses.webRequest.onBeforeRequest((details, cb) => {
+    // Never filter Chromium's own pages, such as the built-in PDF viewer (chrome-extension://) and DevTools, or the
+    // stand-ins the blocker itself serves.
+    if (/^(chrome-extension|devtools|ibon-resource):/.test(details.url)) return cb({});
+    const tab = tabOfWebContentsId(details.webContentsId);
+    if (tab?.readMode && BLOCKED_IN_READ_MODE.has(details.resourceType)) {
+      tab.blocked++;
+      pushTabsSoon();
+      return cb({ cancel: true });
+    }
+    // Pages are filtered, Ibon itself (its interface, the list downloads) never is. A service worker's requests
+    // belong to no tab; the page that registered it shows up as the referrer.
+    const pageUrl = tab ? tab.view.webContents.getURL() : details.webContentsId == null && isWebUrl(details.referrer) ? details.referrer : "";
+    if (!tab && !pageUrl) return cb({});
+    const verdict = blocker.check({ url: details.url, type: details.resourceType, method: details.method, sourceUrl: details.referrer, pageUrl });
+    if (verdict?.blocked && tab) {
+      tab.blocked++;
+      pushTabsSoon();
+    }
+    cb(verdict?.response ?? {});
+  });
+  // `$csp=` rules: add a Content-Security-Policy to pages and frames. A page enforces every CSP header it gets, so
+  // adding one more never loosens the site's own policy.
+  ses.webRequest.onHeadersReceived({ urls: ["<all_urls>"], types: ["mainFrame", "subFrame"] }, (details, cb) => {
+    const tab = tabOfWebContentsId(details.webContentsId);
+    const policy = tab && blocker.csp({ url: details.url, type: details.resourceType, pageUrl: tab.view.webContents.getURL() });
+    if (!policy) return cb({});
+    const headers = { ...details.responseHeaders };
+    const name = Object.keys(headers).find((k) => k.toLowerCase() === "content-security-policy") ?? "Content-Security-Policy";
+    headers[name] = [...(headers[name] ?? []), policy];
+    cb({ responseHeaders: headers });
+  });
+}
+
+// Element hiding and scriptlets. COSMETIC_PRELOAD asks for them on these two channels, from an isolated world the
+// page cannot reach. Only page tabs get an answer, and the page address comes from the browser, not the message.
+function installCosmeticFiltering() {
+  ipcMain.handle("@ghostery/adblocker/is-mutation-observer-enabled", (event) => tabIdOf(event.sender) !== null);
+  ipcMain.handle("@ghostery/adblocker/inject-cosmetic-filters", (event, _url, dom) => {
+    const frame = event.senderFrame;
+    if (!frame || tabIdOf(event.sender) === null) return;
+    const found = blocker.cosmetics(frame.url, dom);
+    if (!found) return;
+    if (found.styles) event.sender.insertCSS(found.styles, { cssOrigin: "user" }).catch(() => {});
+    for (const script of found.scripts) frame.executeJavaScript(script).catch(() => {}); // the page may have moved on
   });
 }
 
@@ -390,6 +522,39 @@ function registerIpc() {
 
   handle("permission:list", () => permissions.snapshot());
   handle("permission:respond", (id, allow) => permissions.resolve(Number(id), Boolean(allow)));
+
+  handle("blocker:status", () => blockerStatus());
+  handle("blocker:update", async () => {
+    await blocker.update();
+    return blockerStatus();
+  });
+  // uBlock Origin's power button: pause or resume blocking on a site, then reload the page so it takes effect.
+  handle("blocker:pause", (site, paused) => {
+    const host = String(site ?? "").toLowerCase();
+    if (!/^(\[[0-9a-f:.]+\]|[a-z0-9_.-]+)$/.test(host)) throw new Error("Not a site name");
+    const page = activeTab()?.view.webContents;
+    const wasPaused = page ? blocker.isPaused(page.getURL()) : false;
+    const s = readSettings();
+    const sites = new Set(s.blocking.pausedSites);
+    if (paused) sites.add(host);
+    else sites.delete(host);
+    s.blocking = { ...s.blocking, pausedSites: [...sites].sort() };
+    writeSettings(s);
+    blocker.setPausedSites(s.blocking.pausedSites);
+    if (page && blocker.isPaused(page.getURL()) !== wasPaused) page.reload();
+    pushTabs();
+    pushBlocker();
+    return blockerStatus();
+  });
+  handle("blocker:setFilters", (text) => {
+    const myFilters = String(text ?? "").slice(0, 1_000_000);
+    const s = readSettings();
+    s.blocking = { ...s.blocking, myFilters };
+    writeSettings(s);
+    blocker.setMyFilters(myFilters);
+    pushBlocker();
+    return blockerStatus();
+  });
 
   handle("app:info", () => ({ version: app.getVersion(), electron: process.versions.electron, chromium: process.versions.chrome, platform: process.platform }));
   handle("crash:info", () => summarizeDumps(app.getPath("crashDumps")));
@@ -482,11 +647,14 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   installAppMenu();
   loadHostsFile();
   installPermissionPolicy();
+  // A problem with ad blocking must never keep the browser from opening; the built-in list still applies.
+  await startBlocker().catch((err) => console.warn(`[ibon] ad blocking did not start fully: ${err.message}`));
   installFilters();
+  installCosmeticFiltering();
   registerIpc();
   createWindow();
   app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());

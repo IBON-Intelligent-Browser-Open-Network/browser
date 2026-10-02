@@ -8,7 +8,8 @@ directories:
   output: release
   buildResources: build
 
-# Ship only what runs. React is bundled into dist/ by Vite, so node_modules is not needed at runtime.
+# Ship only what runs. React is bundled into dist/ by Vite. electron-builder adds the runtime `dependencies` (the
+# ad-blocking engine) from node_modules on its own, without Electron or any devDependency.
 files:
   - electron/**/*
   - "!electron/**/*.test.mjs"

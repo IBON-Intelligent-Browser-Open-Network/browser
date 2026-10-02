@@ -23,6 +23,9 @@ export function App() {
 
   const active = tabs.find((t) => t.active);
   const readMode = Boolean(active?.readMode);
+  const blocked = active?.blocked ?? 0;
+  const blockingPaused = Boolean(active?.blockingPaused);
+  const shieldLabel = blockingPaused ? "Ad and tracker blocking is paused on this site" : `${blocked} request${blocked === 1 ? "" : "s"} blocked on this page`;
   const crashed = active?.crashed ?? null;
   // The native page view is drawn above this UI, so hide it whenever the UI has to show something instead.
   const showPage = !readMode && !crashed;
@@ -156,6 +159,19 @@ export function App() {
           placeholder="Search Google or enter address"
           spellCheck={false}
         />
+        <button
+          type="button"
+          className={`icon shield${blockingPaused ? " paused" : ""}${panel === "blocking" ? " on" : ""}`}
+          onClick={() => setPanel(panel === "blocking" ? null : "blocking")}
+          title={`${shieldLabel}. Click for blocking controls.`}
+          aria-label={shieldLabel}
+        >
+          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+            <path d="M8 1.5 2.5 3.6v3.9c0 3.3 2.3 5.9 5.5 7 3.2-1.1 5.5-3.7 5.5-7V3.6Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+            {blockingPaused && <path d="M3 13 13 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />}
+          </svg>
+          {!blockingPaused && blocked > 0 && <span className="shield-count">{blocked > 999 ? "999+" : blocked}</span>}
+        </button>
         <button type="button" className={`pill${readMode ? " on" : ""}`} onClick={toggleRead} title="Text-only read mode: blocks images, media and fonts">
           Read mode
         </button>
@@ -182,9 +198,9 @@ export function App() {
 
       <div className="body">
         <div className="content" ref={contentRef}>
-          {crashed ? <CrashNotice reason={crashed} onReload={() => void api.reload()} /> : readMode && <Reader state={reader} blocked={active?.blocked ?? 0} onRefresh={loadReader} />}
+          {crashed ? <CrashNotice reason={crashed} onReload={() => void api.reload()} /> : readMode && <Reader state={reader} blocked={blocked} onRefresh={loadReader} />}
         </div>
-        {panel && <Sidebar panel={panel} setPanel={setPanel} onAction={runAction} activeUrl={active?.url ?? ""} activeTitle={active?.title ?? ""} />}
+        {panel && <Sidebar panel={panel} setPanel={setPanel} onAction={runAction} activeUrl={active?.url ?? ""} activeTitle={active?.title ?? ""} blocked={blocked} blockingPaused={blockingPaused} />}
       </div>
     </div>
   );

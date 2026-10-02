@@ -6,7 +6,8 @@
 //   SMOKE_OUT=./shots npm run smoke                      # also save screenshots
 //
 // Checks: the app starts, the UI renders, a crashed tab shows the recovery notice and leaves a local Crashpad
-// report (never uploaded), Reload recovers it, and PDFs open in Chromium's built-in (PDFium) viewer.
+// report (never uploaded), Reload recovers it, ad blocking works and can be paused per site, and PDFs open in
+// Chromium's built-in (PDFium) viewer. The run never downloads filter lists, so it needs no network.
 import { spawn, execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -117,8 +118,16 @@ function makePdf(text) {
   return Buffer.from(out, "latin1");
 }
 const pdf = makePdf("Ibon smoke test PDF");
+let adHits = 0; // how often the "ad" script reached the server
 const server = http.createServer((req, res) => {
-  if (req.url.endsWith(".pdf")) {
+  if (req.url.startsWith("/ad-script.js")) {
+    adHits++;
+    res.writeHead(200, { "Content-Type": "text/javascript" });
+    res.end("window.__adLoaded = true;");
+  } else if (req.url.startsWith("/ads.html")) {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end('<!doctype html><title>Ibon blocking page</title><div class="ad-banner">ad</div><p id="content">article</p><script src="/ad-script.js"></script><script>window.__adLoaded = window.__adLoaded || false;</script>');
+  } else if (req.url.endsWith(".pdf")) {
     res.writeHead(200, { "Content-Type": "application/pdf" });
     res.end(pdf);
   } else {
@@ -137,6 +146,7 @@ const args = [`--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "
 if (process.platform === "linux" && process.env.CI) args.push("--no-sandbox"); // CI containers cannot set up the SUID sandbox
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE; // set by some editors' terminals; would run Electron as plain Node
+env.IBON_NO_FILTER_DOWNLOAD = "1"; // no filter-list downloads: the blocking checks use My filters instead
 const exe = process.env.IBON_EXE ? path.resolve(process.env.IBON_EXE) : null;
 const child = exe
   ? spawn(exe, args, { env, stdio: "ignore" })
@@ -296,6 +306,35 @@ try {
   await sleep(800);
   check("the Settings panel opens and shows diagnostics", Boolean(await until(() => evaluate(ui, "document.body.innerText.includes('Diagnostics') && document.body.innerText.includes('Ibon 0.')"), 8000)));
   await shot(ui, "settings.png");
+
+  // ---- Ad and tracker blocking. Rules typed into My filters (uBlock Origin syntax) go through the same engine,
+  // request filter and page-side element hiding as the downloaded lists do.
+  await evaluate(ui, "[...document.querySelectorAll('.sidebar-tabs button')].find((b) => b.textContent === 'Blocking').click()");
+  check("the Blocking panel opens", Boolean(await until(() => evaluate(ui, "!!document.querySelector('.blocking .filters')"), 8000)));
+  const rules = ["/ad-script.js$script", "##.ad-banner"].join("\n"); // block a script, hide an element
+  const myFilters = await evaluate(ui, `window.ibon.invoke('blocker:setFilters', ${JSON.stringify(rules)})`);
+  check("My filters take uBlock Origin syntax", myFilters.myFilters.rules === 2, JSON.stringify(myFilters.myFilters));
+  await evaluate(ui, `window.ibon.invoke('tab:navigate', '${base}/ads.html')`);
+  const adsTab = await until(async () => (await targets()).find((t) => t.type === "page" && t.url === `${base}/ads.html` && t.title === "Ibon blocking page"), 20000);
+  const inAds = async (expression) => {
+    const c = await cdp(adsTab.webSocketDebuggerUrl);
+    try {
+      return (await c.send("Runtime.evaluate", { expression, returnByValue: true })).result.value;
+    } finally {
+      c.close();
+    }
+  };
+  const bannerHidden = () => inAds("getComputedStyle(document.querySelector('.ad-banner')).display === 'none'");
+  check("element hiding hides the ad", Boolean(await waitFor(bannerHidden)));
+  check("a blocked script never reaches the server", adHits === 0 && (await inAds("window.__adLoaded")) === false, `${adHits} requests`);
+  check("the page's own content stays", (await inAds("getComputedStyle(document.querySelector('#content')).display")) !== "none");
+  check("the toolbar counts what was blocked", Boolean(await waitFor(async () => /^\s*[1-9]/.test(await evaluate(ui, "document.querySelector('.shield')?.textContent || ''")))));
+  await shot(ui, "blocking.png");
+  await evaluate(ui, "document.querySelector('.site-card button').click()"); // Pause blocking on this site
+  check("pausing a site reloads it with nothing blocked", Boolean(await waitFor(async () => adHits > 0 && !(await bannerHidden()), 15000)), `${adHits} requests`);
+  check("the toolbar shows blocking paused", String(await evaluate(ui, "document.querySelector('.shield')?.getAttribute('aria-label')")).includes("paused"));
+  await evaluate(ui, "document.querySelector('.site-card button').click()"); // and resume
+  check("resuming blocks again", Boolean(await waitFor(bannerHidden, 15000)));
 
   await evaluate(ui, `window.ibon.invoke('tab:navigate', '${base}/doc.pdf')`);
   const pdfTab = await until(async () => (await targets()).find((t) => t.url === `${base}/doc.pdf`), 20000);

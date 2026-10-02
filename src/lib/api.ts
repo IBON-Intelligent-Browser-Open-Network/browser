@@ -6,7 +6,10 @@ export interface TabInfo {
   canGoBack: boolean;
   canGoForward: boolean;
   readMode: boolean;
+  /** Requests blocked on the current page: ads and trackers, and in Read mode images, media and fonts. */
   blocked: number;
+  /** True when ad and tracker blocking is paused for this site. */
+  blockingPaused: boolean;
   /** Why this tab's renderer died (for example "crashed" or "oom"), or null while it is healthy. */
   crashed: string | null;
   active: boolean;
@@ -28,6 +31,25 @@ export interface PermissionRequest {
   origin: string;
   permission: "media" | "notifications";
   mediaTypes: ("video" | "audio")[];
+}
+
+/** Ad and tracker blocking with uBlock Origin's filter lists. */
+export interface BlockerStatus {
+  /** ready: the lists are in use. updating: a download is under way. fallback: only the small built-in list. */
+  state: "ready" | "updating" | "fallback";
+  /** When the lists were last downloaded (ms since 1970); 0 when rebuilt from saved copies; null when there are none. */
+  updatedAt: number | null;
+  networkRules: number;
+  cosmeticRules: number;
+  /** Whether uBO's scriptlets (`##+js(...)`) could be loaded. */
+  scriptlets: boolean;
+  lists: { id: string; name: string; ok: boolean }[];
+  myFilters: { rules: number; unsupported: number };
+  /** The last download problem, or null. */
+  error: string | null;
+  pausedSites: string[];
+  /** My filters as the user typed them. */
+  myFiltersText: string;
 }
 
 export interface AppInfo {
@@ -80,6 +102,7 @@ interface Bridge {
   onPermissions(cb: (requests: PermissionRequest[]) => void): () => void;
   onShortcut(cb: (action: ShortcutAction) => void): () => void;
   onFindResult(cb: (result: FindResult) => void): () => void;
+  onBlocker(cb: (status: BlockerStatus) => void): () => void;
 }
 
 declare global {
@@ -121,4 +144,9 @@ export const api = {
   permissions: () => b().invoke<PermissionRequest[]>("permission:list"),
   respondPermission: (id: number, allow: boolean) => b().invoke("permission:respond", id, allow),
   onPermissions: (cb: (requests: PermissionRequest[]) => void) => b().onPermissions(cb),
+  blockerStatus: () => b().invoke<BlockerStatus>("blocker:status"),
+  updateFilterLists: () => b().invoke<BlockerStatus>("blocker:update"),
+  pauseBlocking: (site: string, paused: boolean) => b().invoke<BlockerStatus>("blocker:pause", site, paused),
+  setMyFilters: (text: string) => b().invoke<BlockerStatus>("blocker:setFilters", text),
+  onBlocker: (cb: (status: BlockerStatus) => void) => b().onBlocker(cb),
 };

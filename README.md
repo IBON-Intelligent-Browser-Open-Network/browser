@@ -39,7 +39,7 @@
 - **Save data and tokens.** A per-tab **Read mode** blocks images, media and fonts and gives you clean text, which is also the cheapest thing to hand to an LLM.
 - **Bring your own LLM, or none.** Everything works without AI. If you want it, connect ChatGPT, Claude, Grok, DeepSeek, Kimi, GLM, a local Ollama model, or any OpenAI-compatible endpoint.
 - **Built for developers.** DNS, response-header, ping and whois lookups for the current site, and a one-click webhook for sending a page's text to n8n, Zapier or your own service.
-- **Private by default.** Known trackers are blocked, nothing phones home, and crash reports stay on your computer.
+- **Private by default.** Ads and trackers are blocked with uBlock Origin's filter lists, nothing phones home, and crash reports stay on your computer.
 - **Open.** BSD-3-Clause. Fork it, change it, ship it.
 
 ## Download
@@ -67,7 +67,8 @@ Signing is on the [roadmap](tasks.md). Until then you can compare the file you d
 | **Find and shortcuts** | Find in page with match count, a right-click menu (open link in new tab, copy link, search for selection, Inspect), and the usual browser shortcuts, see below |
 | **PDFs** | Chromium's built-in PDF viewer (PDFium): thumbnails, zoom, rotate, annotate, download, print |
 | **Read mode** | Text-only loading per tab, a clean reader view, word count, page size and blocked-request count |
-| **Privacy** | Built-in tracker and ad-network blocking with a per-tab counter; no telemetry |
+| **Ad and tracker blocking** | uBlock Origin's default filter lists, updated daily: blocked requests, hidden ad slots, uBO scriptlets and stand-ins that keep pages working. A shield in the toolbar counts what was blocked on the page; pause it per site or add your own rules in uBO syntax. [Details](#ad-and-tracker-blocking) |
+| **Privacy** | No telemetry, no account, nothing sent anywhere you did not ask for |
 | **Assistant** | Ask about the current page, summarise it (short, medium or detailed), and let it open URLs, toggle Read mode or copy the page text |
 | **Dev tools panel** | DNS, response headers, ping and whois (RDAP) for the current host; send a page's readable text to any webhook |
 | **Resilience** | A crashed tab shows a notice with **Reload tab** while your other tabs keep working; crash reports are kept locally ([details](docs/crash-reports.md)) |
@@ -95,6 +96,27 @@ Signing is on the [roadmap](tasks.md). Until then you can compare the file you d
 | Read mode | Ctrl+Alt+R | Cmd+Alt+R |
 | Developer tools | F12 or Ctrl+Shift+I | F12 or Cmd+Alt+I |
 
+## Ad and tracker blocking
+
+Ibon blocks ads and trackers with the filter lists [uBlock Origin](https://github.com/gorhill/uBlock) turns on out of
+the box: uBlock filters (Ads, Badware risks, Privacy, Unbreak, Quick fixes), EasyList, EasyPrivacy and the Online
+Malicious URL Blocklist, about 170,000 rules. They are downloaded from uBO's own servers on first run and refreshed
+daily. Until the first download finishes (or if you are offline) a small built-in tracker list stands in.
+
+- **The shield** next to the address bar shows how many requests were blocked on the page. Click it for the
+  **Blocking** panel.
+- **Pause blocking on this site** is uBO's power button: the page reloads with nothing blocked. Paused sites are listed
+  in the panel, and pausing `example.com` covers its subdomains.
+- **My filters** takes rules in uBO syntax, one per line: `||ads.example.com^` blocks a server, `example.com##.banner`
+  hides an element, `example.com##+js(set-constant, adsEnabled, false)` runs a scriptlet, and `@@` makes an exception
+  that overrides the lists.
+- Pages themselves are never blocked, only what they load. uBO's `$redirect` rules swap a script such as Google
+  Analytics for a harmless stand-in, so pages that expect it keep working.
+
+uBlock Origin's code is GPL-3.0, so it is not part of Ibon (see [docs/licensing.md](docs/licensing.md)). Its lists are
+used as data, and they run on [Ghostery's filter engine](https://github.com/ghostery/adblocker) (MPL-2.0), which reads
+uBO's filter syntax. One of uBO's defaults, Peter Lowe's list, is left out because it states no licence.
+
 ## Connect an LLM (optional)
 
 Open the sidebar, choose **Settings**, pick a provider, set the model and paste your API key. For a fully offline
@@ -116,19 +138,23 @@ Ibon is an early alpha. The things to know before you rely on it:
 - **The assistant acts on its own replies without asking you first.** Treat pages you do not trust accordingly; asking for confirmation is next on the [roadmap](tasks.md).
 - **API keys are only encrypted when your operating system provides a keychain.** Without one they are stored with weaker protection.
 - **Installers are unsigned**, and only Windows has been tried by hand.
+- **Ad blocking** hides elements in the page itself but not inside embedded frames (requests from frames are still
+  blocked), and there is no element picker or request logger yet.
 - There are no bookmarks, history, downloads panel, extensions or session restore yet. See the [roadmap](tasks.md).
 
 ## How it works
 
 ```
 ┌────────────────────────── Electron main process ─────────────────────────┐
-│ tabs (one Chromium view each) · tracker and read-mode request filter     │
+│ tabs (one Chromium view each) · read-mode request filter                 │
+│ ad blocker: uBlock Origin's lists, Ghostery's engine, built in a worker  │
 │ settings and encrypted keys · LLM calls · DNS, headers, webhook tools    │
 │ crash reporter (Crashpad, local only)                                    │
 └───────────────▲──────────────────────────────────────────────────────────┘
                 │ IPC (validated sender, context isolation, no Node access)
 ┌───────────────┴───────── React interface (renderer) ─────────────────────┐
-│ tab strip · toolbar · reader view · sidebar (assistant, tools, settings) │
+│ tab strip · toolbar and blocking shield · reader view                    │
+│ sidebar: assistant, dev tools, blocking, settings                        │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,7 +188,7 @@ npm start          # build the interface and launch Ibon
 | `npm run dev` | Launch with hot reload |
 | `npm run typecheck` | Type-check the interface |
 | `npm test` | Run the unit tests |
-| `npm run smoke` | Launch the real app and check it end to end (crash recovery, panels, PDF viewer) |
+| `npm run smoke` | Launch the real app and check it end to end (crash recovery, ad blocking, panels, PDF viewer) |
 | `npm run pack` | Build an unpacked app into `release/` |
 | `npm run dist` | Build installers for your OS into `release/` |
 
@@ -196,5 +222,8 @@ only takes in permissive code and what to do about GPL. Files under `chromium/` 
 
 Ibon stands on the work of the [Electron](https://www.electronjs.org/), [Chromium](https://www.chromium.org/),
 [PDFium](https://pdfium.googlesource.com/pdfium/), [Crashpad](https://chromium.googlesource.com/crashpad/crashpad/),
-[React](https://react.dev/), [Vite](https://vite.dev/) and [Min](https://github.com/minbrowser/min) projects. Ibon is
-not affiliated with or endorsed by Google, the Chromium project, the Electron project or the Min project.
+[React](https://react.dev/), [Vite](https://vite.dev/), [Min](https://github.com/minbrowser/min) and
+[Ghostery adblocker](https://github.com/ghostery/adblocker) projects, and uses the filter lists of
+[uBlock Origin](https://github.com/uBlockOrigin/uAssets), [EasyList](https://easylist.to/) and
+[URLhaus filter](https://gitlab.com/malware-filter/urlhaus-filter). Ibon is not affiliated with or endorsed by Google,
+the Chromium project, the Electron project, the Min project, uBlock Origin or Ghostery.

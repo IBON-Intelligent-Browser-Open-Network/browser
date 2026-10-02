@@ -47,5 +47,9 @@
     "react-dom": "^19.2.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "@ghostery/adblocker": "^2.18.2",
+    "@ghostery/adblocker-electron-preload": "^2.18.2"
   }
 }

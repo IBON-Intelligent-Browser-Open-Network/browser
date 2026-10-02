@@ -45,6 +45,44 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### Ghostery adblocker (MPL-2.0)
+
+The ad and tracker blocker runs on [Ghostery's adblocker](https://github.com/ghostery/adblocker): `@ghostery/adblocker`,
+`@ghostery/adblocker-content`, `@ghostery/adblocker-extended-selectors`, `@ghostery/adblocker-electron-preload` and
+`@ghostery/url-parser` (Copyright (c) 2017-present Ghostery GmbH), with Rémi Berson's helper packages
+`@remusao/small`, `@remusao/smaz`, `@remusao/smaz-compress`, `@remusao/smaz-decompress`, `@remusao/trie` and
+`@remusao/guess-url-type` ([remusao/mono](https://github.com/remusao/mono)). They are used unmodified under the
+Mozilla Public License 2.0; the licence text is in [LICENSES/MPL-2.0.txt](LICENSES/MPL-2.0.txt), each package carries
+its own copy inside the app, and their source is at the links above.
+
+### tldts (MIT)
+
+`tldts-experimental` and `tldts-core` ([remusao/tldts](https://github.com/remusao/tldts)), used by the filter engine.
+
+```
+MIT License
+
+Copyright (c) 2017 Thomas Parisot, 2018 Rémi Berson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
+
+### Filter lists (not shipped)
+
+The ad blocker downloads uBlock Origin's filter lists (GPL-3.0), EasyList and EasyPrivacy (GPL-3.0 or CC BY-SA 3.0)
+and the Online Malicious URL Blocklist (CC0 and MIT) from their publishers when Ibon runs. They are not part of Ibon
+or of any installer. [docs/sourcing.md](docs/sourcing.md) lists them.
+
 ## Derived from other open-source projects
 
 ### Min (Apache-2.0)

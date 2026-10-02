@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type AppInfo, type ChatMessage, type CrashInfo, type Settings } from "../lib/api";
 import { PROVIDER_PRESETS } from "../lib/providers";
+import { BlockingPanel } from "./BlockingPanel";
 
-export type Panel = "assistant" | "tools" | "settings" | null;
+export type Panel = "assistant" | "tools" | "blocking" | "settings" | null;
+
+const PANEL_LABELS = { assistant: "Assistant", tools: "Dev tools", blocking: "Blocking", settings: "Settings" } as const;
 
 interface Props {
   panel: Panel;
@@ -11,23 +14,27 @@ interface Props {
   onAction: (name: string, arg?: string) => Promise<void>;
   activeUrl: string;
   activeTitle: string;
+  /** Requests blocked on the active page, and whether blocking is paused on its site. */
+  blocked: number;
+  blockingPaused: boolean;
 }
 
 const ACTION_RE = /^\[action:(\w+)(?:\s+([^\]]+))?\]\s*$/;
 
-export function Sidebar({ panel, setPanel, onAction, activeUrl, activeTitle }: Props) {
+export function Sidebar({ panel, setPanel, onAction, activeUrl, activeTitle, blocked, blockingPaused }: Props) {
   return (
     <aside className="sidebar">
       <nav className="sidebar-tabs">
-        {(["assistant", "tools", "settings"] as const).map((p) => (
+        {(Object.keys(PANEL_LABELS) as (keyof typeof PANEL_LABELS)[]).map((p) => (
           <button key={p} className={panel === p ? "on" : ""} onClick={() => setPanel(p)}>
-            {p === "assistant" ? "Assistant" : p === "tools" ? "Dev tools" : "Settings"}
+            {PANEL_LABELS[p]}
           </button>
         ))}
       </nav>
       <div className="sidebar-body">
         {panel === "assistant" && <Assistant onAction={onAction} activeUrl={activeUrl} activeTitle={activeTitle} />}
         {panel === "tools" && <Tools activeUrl={activeUrl} />}
+        {panel === "blocking" && <BlockingPanel activeUrl={activeUrl} blocked={blocked} paused={blockingPaused} />}
         {panel === "settings" && <SettingsPanel />}
       </div>
     </aside>

@@ -28,4 +28,9 @@ contextBridge.exposeInMainWorld("ibon", {
     ipcRenderer.on("permissions", listener);
     return () => ipcRenderer.removeListener("permissions", listener);
   },
+  onBlocker(cb) {
+    const listener = (_e, status) => cb(status);
+    ipcRenderer.on("blocker", listener);
+    return () => ipcRenderer.removeListener("blocker", listener);
+  },
 });
